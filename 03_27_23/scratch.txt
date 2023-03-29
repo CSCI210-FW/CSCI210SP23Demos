@@ -1,0 +1,3 @@
+select distinct movie.name as 'Movie', movie.year as 'Year', movie.id from movie where movie.name like "Shrek%"
+
+insert into employee(emp_lname, emp_fname, emp_hiredate, job_code, emp_years) values ('Brown', 'Charlie', '2023-03-27', );
