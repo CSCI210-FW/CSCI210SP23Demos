@@ -393,4 +393,123 @@ void addInvoice(sqlite3 *db)
     }
     cus_code = reinterpret_cast<const char *>(sqlite3_column_text(result, 0));
     sqlite3_finalize(result);
+    query = "insert into invoice (cus_code, inv_date) values (";
+    query += cus_code;
+    query += ", '";
+    query += inv_date;
+    query += "');";
+    rc = sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
+    if (rc != SQLITE_OK)
+    {
+        rollback(db, query);
+        return;
+    }
+    inv_number = sqlite3_last_insert_rowid(db);
+    char cont = 'y';
+    query = "select p_code, p_descript, p_qoh, p_price from product";
+    rc = sqlite3_prepare_v2(db, query.c_str(), -1, &result, NULL);
+    if (rc != SQLITE_OK)
+    {
+        sqlite3_finalize(result);
+        rollback(db, query);
+        return;
+    }
+    int lineNum = 1;
+    while (cont == 'y')
+    {
+        sqlite3_reset(result);
+        std::cout << "Please choose a product for the invoice:" << std::endl;
+        i = 0;
+        choice = 0;
+        do
+        {
+            if (sqlite3_column_type(result, 0) != SQLITE_NULL)
+            {
+                std::cout << ++i << ". " << sqlite3_column_text(result, 0);
+                std::cout << " - " << sqlite3_column_text(result, 1);
+                std::cout << std::endl;
+            }
+            rc = sqlite3_step(result);
+        } while (rc == SQLITE_ROW);
+        std::cin >> choice;
+        while (!std::cin || choice < 1 || choice > i)
+        {
+            if (!std::cin)
+            {
+                std::cin.clear();
+                std::cin.ignore(INT_MAX, '\n');
+            }
+
+            std::cout << "That is not a valid choice! Try again!" << std::endl;
+            std::cin >> choice;
+        }
+        sqlite3_reset(result);
+        for (int j = 0; j < choice; j++)
+        {
+            sqlite3_step(result);
+        }
+        std::string prod_code = reinterpret_cast<const char *>(sqlite3_column_text(result, 0));
+        int qoh = sqlite3_column_int(result, 2);
+        double price = sqlite3_column_double(result, 3);
+        int quantity = 0;
+        std::cout << "How many would you like? (Quantity on Hand: " << qoh << "): ";
+        ;
+        std::cin >> quantity;
+        std::cout << std::endl;
+        while (!std::cin || quantity <= 0 || quantity > qoh)
+        {
+            if (!std::cin)
+            {
+                std::cin.clear();
+                std::cin.ignore(INT_MAX, '\n');
+            }
+            if (quantity == -1)
+            {
+                rollback(db, "");
+                sqlite3_finalize(result);
+                return;
+            }
+            std::cout << "That is not a valid quantity. Please try again or enter -1 to quit and rollback." << std::endl;
+            std::cout << "How many would you like? (Quantity on Hand: " << qoh << "): ";
+            std::cin >> quantity;
+        }
+        total += quantity * price;
+        query = "insert into line values (";
+        query += std::to_string(inv_number) + ", ";
+        query += std::to_string(lineNum++) + ", ";
+        query += "'" + prod_code + "',  ";
+        query += std::to_string(quantity) + ", ";
+        query += std::to_string(price) + ");";
+        rc = sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
+        if (rc != SQLITE_OK)
+        {
+            rollback(db, query);
+            sqlite3_finalize(result);
+            return;
+        }
+        query = "update product set p_qoh = p_qoh - " + std::to_string(quantity) + " where p_code = '" + prod_code + "';";
+        rc = sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
+        if (rc != SQLITE_OK)
+        {
+            rollback(db, query);
+            sqlite3_finalize(result);
+            return;
+        }
+        std::cout << "Would you like to enter another product? Y or N ";
+        std::cin >> cont;
+        cont = tolower(cont);
+    }
+    sqlite3_finalize(result);
+    query = "update customer set cus_balance = cus_balance + " + std::to_string(total) + " where cus_code = " + cus_code + ";";
+    rc = sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
+    if (rc != SQLITE_OK)
+    {
+        rollback(db, query);
+        return;
+    }
+    rc = commit(db);
+    if (rc == SQLITE_OK)
+    {
+        std::cout << "Successfully inserted invoice " << inv_number << std::endl;
+    }
 }
