@@ -91,6 +91,35 @@ int mainMenu()
     return choice;
 }
 
+int rollback(sqlite3 *db, std::string query)
+{
+    std::string error = sqlite3_errmsg(db);
+    std::cout << "There was an error: " << error << std::endl;
+    std::cout << query << std::endl;
+    char *err;
+    std::string rollbackQuery = "rollback";
+    int rc = sqlite3_exec(db, rollbackQuery.c_str(), NULL, NULL, &err);
+    if (rc != SQLITE_OK)
+    {
+        std::cout << "There was an error on rollback: " << err << std::endl;
+        sqlite3_free(err);
+    }
+    return rc;
+}
+
+int commit(sqlite3 *db)
+{
+    char *err;
+    std::string commitQuery = "commit";
+    int rc = sqlite3_exec(db, commitQuery.c_str(), NULL, NULL, &err);
+    if (rc != SQLITE_OK)
+    {
+        std::cout << "There was an error on commit: " << err << std::endl;
+        sqlite3_free(err);
+    }
+    return rc;
+}
+
 int beginTransaction(sqlite3 *db)
 {
     char *err;
@@ -315,4 +344,53 @@ void addInvoice(sqlite3 *db)
     {
         return;
     }
+    std::string query = "select cus_code, cus_fname || ' ' || cus_lname as name ";
+    query += "from customer order by cus_code";
+    sqlite3_stmt *result;
+    std::string error;
+    std::string cus_code;
+    int inv_number;
+
+    char formatDate[80];
+    time_t currentDate = time(NULL);
+    strftime(formatDate, 80, "%F", localtime(&currentDate)); // for date and time "%F %T"
+    std::string inv_date(formatDate);
+    double total = 0;
+    rc = sqlite3_prepare_v2(db, query.c_str(), -1, &result, NULL);
+    if (rc != SQLITE_OK)
+    {
+        rollback(db, query);
+        sqlite3_finalize(result);
+        return;
+    }
+    std::cout << "Please choose the customer for the invoice:" << std::endl;
+    int i = 0, choice;
+    do
+    {
+        if (sqlite3_column_type(result, 0) != SQLITE_NULL)
+        {
+            std::cout << ++i << ". " << sqlite3_column_text(result, 0);
+            std::cout << " - " << sqlite3_column_text(result, 1);
+            std::cout << std::endl;
+        }
+        rc = sqlite3_step(result);
+    } while (rc == SQLITE_ROW);
+    std::cin >> choice;
+    while (!std::cin || choice < 1 || choice > i)
+    {
+        if (!std::cin)
+        {
+            std::cin.clear();
+            std::cin.ignore(INT_MAX, '\n');
+        }
+        std::cout << "That is not a valid choice! Try again!" << std::endl;
+        std::cin >> choice;
+    }
+    sqlite3_reset(result);
+    for (int j = 0; j < choice; j++)
+    {
+        sqlite3_step(result);
+    }
+    cus_code = reinterpret_cast<const char *>(sqlite3_column_text(result, 0));
+    sqlite3_finalize(result);
 }
